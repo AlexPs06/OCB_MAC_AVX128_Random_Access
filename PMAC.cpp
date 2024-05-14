@@ -20,9 +20,7 @@
 
 using namespace std;
 
-static void H(__m128i * nonce,  __m128i *key, unsigned rounds,unsigned nblks);
-static void I(__m128i * nonce,  __m128i  key, unsigned rounds,unsigned nblks);
-static void ELIMAC(unsigned char *K_1, unsigned char *K_2, unsigned char *M, int size, unsigned char *T);
+static void PMAC(unsigned char *K_1, unsigned char *N,unsigned char *M, int size, unsigned char *T);
 static void AES_128_Key_Expansion(const unsigned char *userkey, void *key);
 static inline void AES_encrypt(__m128i tmp, __m128i *out,__m128i *key, unsigned rounds);
 static void imprimiArreglo(int tam, unsigned char *in );
@@ -43,17 +41,17 @@ int main(){
                                             };
     ALIGN(16) unsigned char tag[16 ]={ 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0};
     ALIGN(16) unsigned char K_1[16 ]={ 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0};
-    ALIGN(16) unsigned char K_2[16 ]={ 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0};
+    ALIGN(16) unsigned char N[16 ]={ 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0};
 
-    ELIMAC(K_1, K_2, plaintext, 128, tag);
-
+    PMAC(K_1, N, plaintext, 64, tag);
+    
     printf("\n");
     imprimiArreglo(16, tag);
     return 0;
 }
 
 
-void ELIMAC(unsigned char *K_1, unsigned char *K_2, unsigned char *M, int size, unsigned char *T){
+static void PMAC(unsigned char *K_1, unsigned char *N,unsigned char *M, int size, unsigned char *T){
 
     int m_blocks = 0;
     if (size%16==0)
@@ -67,26 +65,30 @@ void ELIMAC(unsigned char *K_1, unsigned char *K_2, unsigned char *M, int size, 
     __m128i Tag;
     __m128i S;
     __m128i keys_128[11];
-    __m128i keys_128_k_2[11];
-    __m128i keys_0 = _mm_setzero_si128();
+    __m128i keys_0[2];
     __m128i sum_nonce= _mm_set_epi32(0,0,0,1);
 
     S = _mm_setzero_si128();
+    keys_0[0] = _mm_setzero_si128();
+    keys_0[1] = _mm_setzero_si128();
 
     AES_128_Key_Expansion(K_1, keys_128);
-    AES_128_Key_Expansion(K_2, keys_128_k_2);
 
-    nonce = _mm_set_epi64x(0,0);
+    nonce = _mm_setzero_si128();
+    nonce = _mm_load_si128((__m128i *)&N[0]);
     
+    AES_encrypt(nonce, &nonce, keys_128, 10);
+
+
     for (size_t i = 0; i < m_blocks; i++){
 
         nonce_temp[0]=nonce; 
         
-        H(nonce_temp,  keys_128, 6, pipeline);
+        AES_encrypt(nonce_temp[0], &nonce_temp[0], keys_128, 2);
         
         plain_text[i]=_mm_xor_si128(plain_text[i],nonce_temp[0]);
         
-        I(&plain_text[i],  keys_0, 4,pipeline);
+        AES_encrypt(plain_text[i], &plain_text[i], keys_128, 10);
 
         S=_mm_xor_si128(plain_text[i],S);
         nonce=_mm_add_epi64(nonce, sum_nonce);
@@ -96,36 +98,8 @@ void ELIMAC(unsigned char *K_1, unsigned char *K_2, unsigned char *M, int size, 
 
     
     Tag=_mm_xor_si128(Tag,S);
-    AES_encrypt(Tag, &Tag, keys_128_k_2, 10);
+    AES_encrypt(Tag, &Tag, keys_128, 10);
 	_mm_store_si128 ((__m128i*)T,Tag);
-}
-
-
-
-
-void H(__m128i * nonce,  __m128i *key, unsigned rounds,unsigned nblks){
-    int i = 0;
-    int j = 0;
-	const __m128i *sched = ((__m128i *)(key));
-    for (i=0; i<nblks; ++i)
-	    nonce[i] =_mm_xor_si128(nonce[i], sched[0]);//4cc
-	for(j=1; j<rounds; ++j)
-	    for (i=0; i<nblks; ++i)
-		    nonce[i] = _mm_aesenc_si128(nonce[i], sched[j]); //80cc
-    for (i=0; i<nblks; ++i)
-	    nonce[i] =_mm_aesenclast_si128(nonce[i], sched[j]);
-}
-
-void I(__m128i * nonce,  __m128i  key, unsigned rounds,unsigned nblks){
-    int i = 0;
-    int j = 0;
-    for (i=0; i<nblks; ++i)
-	    nonce[i] =_mm_xor_si128(nonce[i], key);//4cc
-	for(j=1; j<rounds; ++j)
-	    for (i=0; i<nblks; ++i)
-		    nonce[i] = _mm_aesenc_si128(nonce[i], key); //80cc
-    for (i=0; i<nblks; ++i)
-	    nonce[i] =_mm_aesenclast_si128(nonce[i], key);
 }
 
 
