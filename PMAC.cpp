@@ -59,7 +59,7 @@ static void PMAC(unsigned char *K_1, unsigned char *N,unsigned char *M, int size
     else
         m_blocks=(size/16) + 1;
 
-    __m128i * plain_text = (__m128i*) M;
+    static __m128i * plain_text = (__m128i*) M;
     __m128i nonce;
     __m128i nonce_temp[1];
     __m128i Tag;
@@ -84,12 +84,12 @@ static void PMAC(unsigned char *K_1, unsigned char *N,unsigned char *M, int size
 
         nonce_temp[0]=nonce; 
         
-        AES_encrypt(nonce_temp[0], &nonce_temp[0], keys_128, 2);
+        AES_encrypt(nonce_temp[0], &nonce_temp[0], keys_0, 2);
         
         plain_text[i]=_mm_xor_si128(plain_text[i],nonce_temp[0]);
         
         AES_encrypt(plain_text[i], &plain_text[i], keys_128, 10);
-
+        // imprimiArreglo(16,(unsigned char*)&plain_text[i]);
         S=_mm_xor_si128(plain_text[i],S);
         nonce=_mm_add_epi64(nonce, sum_nonce);
 
@@ -98,6 +98,8 @@ static void PMAC(unsigned char *K_1, unsigned char *N,unsigned char *M, int size
 
     
     Tag=_mm_xor_si128(Tag,S);
+    // imprimiArreglo(16,(unsigned char*)&Tag);
+
     AES_encrypt(Tag, &Tag, keys_128, 10);
 	_mm_store_si128 ((__m128i*)T,Tag);
 }
