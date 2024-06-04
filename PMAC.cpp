@@ -20,7 +20,7 @@
 
 using namespace std;
 
-static void PMAC(unsigned char *K_1, unsigned char *N,unsigned char *M, int size, unsigned char *T);
+static void OCBRA(unsigned char *K_1, unsigned char *N,unsigned char *M, int size, unsigned char *T);
 static void AES_128_Key_Expansion(const unsigned char *userkey, void *key);
 static inline void AES_encrypt(__m128i tmp, __m128i *out,__m128i *key, unsigned rounds);
 static void imprimiArreglo(int tam, unsigned char *in );
@@ -43,14 +43,14 @@ static void imprimiArreglo(int tam, unsigned char *in );
 //     ALIGN(16) unsigned char K_1[16 ]={ 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0};
 //     ALIGN(16) unsigned char N[16 ]={ 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0};
 
-//     PMAC(K_1, N, plaintext, 64, tag);
+//     OCBRA(K_1, N, plaintext, 64, tag);
     
 //     printf("\n");
 //     imprimiArreglo(16, tag);
 //     return 0;
 // }
 
- char infoString[]= "PMAC AVX128 Random Access";  /* Each AE implementation must have a global one */
+ char infoString[]= "OCBRA AVX128 Random Access";  /* Each AE implementation must have a global one */
 
 #ifndef MAX_ITER
 #define MAX_ITER 16384
@@ -149,11 +149,11 @@ int main(int argc, char **argv)
 		do {
 		
 
-            PMAC(key,nonce,pt,iter_list[i],tag);
+            OCBRA(key,nonce,pt,iter_list[i],tag);
 
 			c = clock();
 			for (j = 0; j < iters; j++) {
-                PMAC(key,nonce,pt,iter_list[i],tag);
+                OCBRA(key,nonce,pt,iter_list[i],tag);
 			}
 			c = clock() - c;
 			sec = c/(double)CLOCKS_PER_SEC;
@@ -189,7 +189,7 @@ int main(int argc, char **argv)
 	return ((pt[0]==12) && (pt[10]==34) && (pt[20]==56) && (pt[30]==78));
 }
 
-static void PMAC(unsigned char *K_1, unsigned char *N,unsigned char *M, int size, unsigned char *T){
+static void OCBRA(unsigned char *K_1, unsigned char *N,unsigned char *M, int size, unsigned char *T){
 
     int m_blocks = 0;
     if (size%16==0)
@@ -200,15 +200,16 @@ static void PMAC(unsigned char *K_1, unsigned char *N,unsigned char *M, int size
     static __m128i * plain_text = (__m128i*) M;
     __m128i nonce;
     __m128i nonce_temp[1];
-    __m128i Tag;
+    __m128i Tag=_mm_setzero_si128();;
     __m128i S;
     __m128i keys_128[11];
-    __m128i keys_0[2];
+    __m128i keys_0[3];
     __m128i sum_nonce= _mm_set_epi32(0,0,0,1);
 
     S = _mm_setzero_si128();
     keys_0[0] = _mm_setzero_si128();
     keys_0[1] = _mm_setzero_si128();
+    keys_0[2] = _mm_setzero_si128();
 
     AES_128_Key_Expansion(K_1, keys_128);
 
@@ -227,18 +228,21 @@ static void PMAC(unsigned char *K_1, unsigned char *N,unsigned char *M, int size
         plain_text[i]=_mm_xor_si128(plain_text[i],nonce_temp[0]);
         
         AES_encrypt(plain_text[i], &plain_text[i], keys_128, 10);
-        // imprimiArreglo(16,(unsigned char*)&plain_text[i]);
+
         S=_mm_xor_si128(plain_text[i],S);
         nonce=_mm_add_epi64(nonce, sum_nonce);
 
     }
 
 
-    
-    Tag=_mm_xor_si128(Tag,S);
-    // imprimiArreglo(16,(unsigned char*)&Tag);
+    nonce_temp[0]=nonce; 
 
-    AES_encrypt(Tag, &Tag, keys_128, 10);
+    AES_encrypt(nonce_temp[0], &nonce_temp[0], keys_0, 2);
+
+    AES_encrypt(nonce_temp[0], &nonce_temp[0], keys_128, 10);
+	
+	Tag=_mm_xor_si128(Tag,S);
+    Tag=_mm_xor_si128(Tag,nonce_temp[0]);
 	_mm_store_si128 ((__m128i*)T,Tag);
 }
 
